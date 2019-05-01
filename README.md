@@ -617,7 +617,7 @@ function foo() {
 
 ------
 
-### Ch-3: Objects:
+### Ch-3: Objects
 
 \- Objects come in two forms:
 
@@ -853,9 +853,220 @@ arr.reduce(getSum, 0);	// 125
 
 ------
 
+### Ch-4: Mixing (Up) "Class" Objects
 
+\- Class theory.
+
+\- Mixins.
 
 <br />
+
+---
+
+### Ch-5: Prototypes
+
+```js
+var anotherObject = { a: 2 };
+var myObject = Object.create( anotherObject );
+myObject.a; // 2
+```
+
+- `myObject` is `[[Prototype]]` linked to `anotherObject`.
+
+\- If we use `in` operator, it will check the entire chain of the object.
+
+\- The top-end of every *normal* `[[Prototype]]` chain is the built-in `Object.prototype`. 
+
+- Some utilities found here: `.toString()`, `.valueOf()`, `.hasOwnProperty(..)`, `.isPrototypeOf(..)`..
+
+##### Setting & Shadowing Properties
+
+```js
+myObject.foo = "bar";
+```
+
+\- If `myObject` object has a normal property called `foo` directly present on it, 
+
+- the assignment is as simple as changing the value of the existing property.
+
+\- If `foo` is not already present directly on `myObject`
+
+- the `[[Prototype]]` chain is traversed:
+  -  If `foo` is not found
+    - the property `foo` is added directly to `myObject`.
+  - If a `foo` is found higher on the `[[Prototype]]` chain and has a setter
+    - the setter will always be called.
+  - if `foo` is already present somewhere higher in the chain.
+    - if `foo` **isn't** marked as read-only (`writable:false`)
+      - a new property `foo` is added directly to `myObject`.
+    - if `foo` marked as read-only (`writable:false`)
+      - an error will be thrown in `strict mode`.
+
+> If the property ends up both on `myObject` itself and at a higher level of the `[[Prototype]]` chain that starts at `myObject`, this is called **shadowing**.
+
+\- better to use `Object.defineProperty(..)`, however The presence of a *read-only* property prevents a property of the same name being implicitly created.
+
+\- Example:
+
+```js
+var anotherObject = { a: 2 };
+var myObject = Object.create( anotherObject );
+
+anotherObject.a; // 2
+myObject.a; // 2
+
+anotherObject.hasOwnProperty( "a" ); // true
+myObject.hasOwnProperty( "a" ); // false
+
+myObject.a++; // oops, implicit shadowing!
+
+anotherObject.a; // 2
+myObject.a; // 3
+
+myObject.hasOwnProperty( "a" ); // true
+```
+
+\- The result is `[[Get]]` looking up `a` property via `[[Prototype]]` to get the current value `2` from `anotherObject.a`, incrementing the value by one, then `[[Put]]` assigning the `3` value to a new shadowed property `a` on `myObject`. Oops!
+
+\- If we wanted to increment `anotherObject.a`, the only proper way is `anotherObject.a++`.
+
+##### "Class" Functions
+
+\- each object created from calling `new Foo()` will end up `[[Prototype]]`-linked to `Foo.prototype` object.
+
+- ```js
+  function Foo() { /*...*/ }
+  var a = new Foo();
+  Object.getPrototypeOf( a ) === Foo.prototype; // true
+  ```
+
+>  in JavaScript, we don't create multiple instances of a class. we can create multiple objects that `[[Prototype]]` *link* to a common object. But by default, no copying occurs.
+
+##### "Constructors"
+
+```js
+function Foo() { /* ... */ }
+
+Foo.prototype.constructor === Foo; // true
+
+var a = new Foo();
+a.constructor === Foo; // true
+```
+
+- The `Foo.prototype` object by default at declaration time gets a property called `.constructor`, and this property is a reference back to the function `Foo` that the object is associated with.
+
+> \- when we put `new` keyword in front of a normal function call, that makes that function call a "constructor call".
+>
+> \- `new` hijacks any normal function and calls it in a fashion that constructs an object, in addition to whatever else it was going to do.
+>
+> \-  a "constructor" is **any function called with the `new` keyword** in front of it.
+
+##### Mechanics
+
+```js
+function Foo(name) { this.name = name; }
+Foo.prototype.myName = function() { return this.name; };
+
+var a = new Foo( "a" );
+var b = new Foo( "b" );
+
+a.myName(); // "a"
+b.myName(); // "b"
+```
+
+#### "`Prototypal` Inheritance"
+
+![](./this & object prototypes/fig3.png).
+
+```js
+function Foo(name) { this.name = name; }
+
+Foo.prototype.myName = function() { return this.name; };
+
+function Bar(name,label) {
+	Foo.call( this, name );
+	this.label = label;
+}
+
+// here, we make a new Bar.prototype linked to Foo.prototype
+Bar.prototype = Object.create( Foo.prototype );
+// Beware! Now `Bar.prototype.constructor` is gone.
+
+Bar.prototype.myLabel = function() {
+	return this.label;
+};
+
+var a = new Bar( "a", "obj a" );
+
+a.myName(); // "a"
+a.myLabel(); // "obj a"
+```
+
+\- When `function Bar() {}` is declared, it has a `.prototype` link to its object. But *that* object is not linked to `Foo.prototype`. So, we create a new object that is linked as we want.
+
+```js
+Bar.prototype = Foo.prototype;
+// doing `Bar.prototype.myLabel = ..`, we're modifying the `Foo.prototype`
+// object itself, we likely don't need Bar at all,
+
+Bar.prototype = new Foo();
+// we use the `Foo()` "constructor call" to do it. If that function has any side-effects, they would happen at the time of this linking
+```
+
+\- **`ES6`** adds a `Object.setPrototypeOf(..)` helper 
+
+```js
+Object.setPrototypeOf( Bar.prototype, Foo.prototype );
+```
+
+##### Inspecting "Class" Relationships
+
+ \- instance of:
+
+- The question `instanceof` answers is: in the entire `[[Prototype]]` chain of `a`, does the object arbitrarily pointed to by `Foo.prototype` ever appear?
+
+```js
+function isRelatedTo(o1, o2) {
+	function F(){}
+	F.prototype = o2;
+	return o1 instanceof F;
+}
+
+var a = {};
+var b = Object.create( a );
+
+isRelatedTo( b, a ); // true
+```
+
+![Inspecting.png](./this & object prototypes/Inspecting.png)
+
+```js
+a.isPrototypeOf( b );  // true
+
+Object.getPrototypeOf( b ) === F.prototype; // true
+
+b.__proto__ === F.prototype && b.__proto__ === a; // true
+```
+
+##### `Create()`ing Links
+
+```js
+var bar = Object.create( foo );
+```
+
+- `Object.create(..)` creates a new object (`bar`) linked to the object we specified (`foo`), which gives us all the power (delegation) of the `[[Prototype]]` mechanism.
+
+> `Object.create(null)` creates an object that has a null `[[Prototype]]` linkage, These special empty-`[[Prototype]]` objects are often called **dictionaries**.
+
+<br />
+
+------
+
+
+
+
+
+
 
 <br />
 
